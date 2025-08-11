@@ -1,14 +1,12 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Realtime Restaurant Floorplan</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Realtime Restaurant Floorplan</title>
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 
-  <!-- Socket.IO client -->
-  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-
-  <style>
+<style>
   :root {
     --bg: #f7f7f7;
     --card: #fff;
@@ -54,7 +52,6 @@
     align-items: flex-start;
   }
 
-  /* Container holding all rows */
   .tables-container {
     flex: 1;
     background: var(--card);
@@ -63,7 +60,6 @@
     padding: 10px;
   }
 
-  /* Wrapper for all rows */
   .tables-wrapper {
     display: flex;
     flex-direction: column;
@@ -71,7 +67,6 @@
     width: 100%;
   }
 
-  /* Each row of tables */
   .tables-row {
     display: grid;
     width: 100%;
@@ -121,7 +116,6 @@
   button.secondary { background: #555; }
   .small { padding: 6px 8px; font-size: 13px; }
 
-  /* Tablet/mobile: stack panel below tables */
   @media (max-width: 900px) {
     .container { flex-direction: column; }
     .floating-panel {
@@ -132,254 +126,222 @@
     }
   }
 
-  /* Phones */
   @media (max-width: 480px) {
-  .container {
-    flex-direction: column;
+    .container { flex-direction: column; }
+    .tables-container { width: 100%; }
+    .tables-row {
+      width: 100%;
+      grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+      gap: 8px;
+    }
+    .table { min-height: 60px; padding: 6px; }
+    .number { font-size: 16px; }
+    .capacity, .timer { font-size: 11px; }
   }
-  .tables-container {
-    width: 100%;
-  }
-  .tables-row {
-    width: 100%;
-    grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
-    gap: 8px;
-  }
-  .table { 
-    min-height: 60px; 
-    padding: 6px; 
-  }
-  .number { font-size: 16px; }
-  .capacity, .timer { font-size: 11px; }
-}
 </style>
-
 </head>
 <body>
-  <div class="topbar">
-    <div><strong>Realtime Floorplan</strong></div>
-    <div>
-      <button id="logoutBtn" class="small">Logout</button>
-    </div>
+<div class="topbar">
+  <div><strong>Realtime Floorplan</strong></div>
+  <div>
+    <button id="logoutBtn" class="small">Logout</button>
   </div>
+</div>
 
-  <!-- LOGIN -->
-  <div class="login-container" id="loginScreen">
-    <div class="login-box">
-      <h2>Login</h2>
-      <input type="text" id="username" placeholder="Username" style="width:100%"/><br/><br/>
-      <input type="password" id="password" placeholder="Password" style="width:100%"/><br/><br/>
-      <button id="loginBtn">Sign In</button>
-      <div id="loginError" style="color:red;margin-top:8px;"></div>
-    </div>
+<div class="login-container" id="loginScreen">
+  <div class="login-box">
+    <h2>Login</h2>
+    <input type="text" id="username" placeholder="Username" style="width:100%"/><br/><br/>
+    <input type="password" id="password" placeholder="Password" style="width:100%"/><br/><br/>
+    <button id="loginBtn">Sign In</button>
+    <div id="loginError" style="color:red;margin-top:8px;"></div>
   </div>
+</div>
 
-  <!-- MAIN -->
-  <div id="mainContent" class="hidden">
-    <div class="container">
-      <div class="tables-container" id="tablesContainer" role="grid" aria-label="Tables"></div>
+<div id="mainContent" class="hidden">
+  <div class="container">
+    <div class="tables-container" id="tablesContainer"></div>
+    <div class="floating-panel">
+      <h3>Billed Tables</h3>
+      <div id="statusList"></div>
 
-      <div class="floating-panel">
-        <h3>Billed Tables</h3>
-        <div id="statusList"></div>
+      <h4>Recently Cleared</h4>
+      <div id="clearedList"></div>
 
-        <h4>Recently Cleared</h4>
-        <div id="clearedList"></div>
-
-        <div style="display:flex;gap:8px;margin-top:10px;">
-          <button id="resetBtn" class="small secondary">Reset All</button>
-          <button id="refreshBtn" class="small">Refresh</button>
-        </div>
+      <div style="display:flex;gap:8px;margin-top:10px;">
+        <button id="resetBtn" class="small secondary">Reset All</button>
+        <button id="refreshBtn" class="small">Refresh</button>
       </div>
     </div>
   </div>
+</div>
 
 <script>
-  const socket = io();
-  let timers = {};
-  let serverTables = {};
+const socket = io();
+let timers = {};
+let serverTables = {};
 
-  const loginScreen = document.getElementById('loginScreen');
-  const mainContent = document.getElementById('mainContent');
-  const loginBtn = document.getElementById('loginBtn');
-  const loginError = document.getElementById('loginError');
-  const usernameInput = document.getElementById('username');
-  const passwordInput = document.getElementById('password');
-  const tablesContainer = document.getElementById('tablesContainer');
-  const statusList = document.getElementById('statusList');
-  const clearedList = document.getElementById('clearedList');
-  const resetBtn = document.getElementById('resetBtn');
-  const refreshBtn = document.getElementById('refreshBtn');
-  const logoutBtn = document.getElementById('logoutBtn');
+const loginScreen = document.getElementById('loginScreen');
+const mainContent = document.getElementById('mainContent');
+const loginBtn = document.getElementById('loginBtn');
+const loginError = document.getElementById('loginError');
+const usernameInput = document.getElementById('username');
+const passwordInput = document.getElementById('password');
+const tablesContainer = document.getElementById('tablesContainer');
+const statusList = document.getElementById('statusList');
+const clearedList = document.getElementById('clearedList');
+const resetBtn = document.getElementById('resetBtn');
+const refreshBtn = document.getElementById('refreshBtn');
+const logoutBtn = document.getElementById('logoutBtn');
 
-  function checkLoginOnLoad() {
-    if (localStorage.getItem('loggedIn') === 'true') {
-      loginScreen.classList.add('hidden');
-      mainContent.classList.remove('hidden');
-    }
+function checkLoginOnLoad() {
+  if (localStorage.getItem('loggedIn') === 'true') {
+    loginScreen.classList.add('hidden');
+    mainContent.classList.remove('hidden');
   }
-  checkLoginOnLoad();
+}
+checkLoginOnLoad();
 
-  loginBtn.addEventListener('click', () => {
-    const user = usernameInput.value.trim();
-    const pass = passwordInput.value.trim();
-    if (user === 'admin' && pass === '1234') {
-      localStorage.setItem('loggedIn', 'true');
-      loginScreen.classList.add('hidden');
-      mainContent.classList.remove('hidden');
-      loginError.textContent = '';
-    } else {
-      loginError.textContent = 'Invalid username or password';
-    }
-  });
-
-  logoutBtn.addEventListener('click', () => {
-    localStorage.removeItem('loggedIn');
-    Object.values(timers).forEach(t => clearInterval(t.interval));
-    timers = {};
-    serverTables = {};
-    mainContent.classList.add('hidden');
-    loginScreen.classList.remove('hidden');
-  });
-
-  function renderTables() {
-    tablesContainer.innerHTML = '';
-    const wrapper = document.createElement('div');
-    wrapper.className = 'tables-wrapper';
-
-    function makeRow(ids) {
-      const rowDiv = document.createElement('div');
-      rowDiv.className = 'tables-row';
-      ids.forEach(id => {
-        const t = serverTables[String(id)];
-        if (!t) return;
-        const el = document.createElement('div');
-        el.className = 'table' + (t.billed ? ' billed' : '');
-        el.dataset.id = t.id;
-        el.dataset.capacity = t.capacity;
-        el.innerHTML = `
-          <div class="capacity">${t.capacity} pac</div>
-          <div class="number">${t.id}</div>
-          <div class="timer" data-timer-for="${t.id}">${formatElapsed(t.start)}</div>
-        `;
-        el.addEventListener('click', () => {
-          if (localStorage.getItem('loggedIn') !== 'true') {
-            alert('Please login to change table state.');
-            return;
-          }
-          if (!t.billed) {
-            socket.emit('start_table', { id: t.id });
-          } else {
-            socket.emit('clear_table', { id: t.id });
-          }
-        });
-        rowDiv.appendChild(el);
-        attachTimerFor(t.id);
-      });
-      wrapper.appendChild(rowDiv);
-    }
-
-    makeRow([1,2,3,4,5,6,7,8]);
-    makeRow([9,10,11,12,14]); // skip 13
-    makeRow([15,16,18,19,20,21,22]); // skip 17
-
-    tablesContainer.appendChild(wrapper);
-    renderStatusList();
+loginBtn.addEventListener('click', () => {
+  if (usernameInput.value.trim() === 'admin' && passwordInput.value.trim() === '1234') {
+    localStorage.setItem('loggedIn', 'true');
+    loginScreen.classList.add('hidden');
+    mainContent.classList.remove('hidden');
+    loginError.textContent = '';
+  } else {
+    loginError.textContent = 'Invalid username or password';
   }
+});
 
-  function renderStatusList() {
-    statusList.innerHTML = '';
-    Object.values(serverTables).filter(t => t.billed).forEach(t => {
-      const div = document.createElement('div');
-      div.textContent = `Table ${t.id} (${t.capacity} pac) - billed`;
-      statusList.appendChild(div);
-    });
-  }
+logoutBtn.addEventListener('click', () => {
+  localStorage.removeItem('loggedIn');
+  Object.values(timers).forEach(t => clearInterval(t.interval));
+  timers = {};
+  serverTables = {};
+  mainContent.classList.add('hidden');
+  loginScreen.classList.remove('hidden');
+});
 
-  function renderClearedList(arr) {
-    clearedList.innerHTML = '';
-    arr.forEach(s => {
-      const div = document.createElement('div');
-      div.textContent = s;
-      div.addEventListener('click', () => {
-        const idx = arr.indexOf(s);
-        if (idx !== -1) {
-          arr.splice(idx, 1);
-          renderClearedList(arr);
+function renderTables() {
+  tablesContainer.innerHTML = '';
+  const wrapper = document.createElement('div');
+  wrapper.className = 'tables-wrapper';
+
+  function makeRow(ids) {
+    const rowDiv = document.createElement('div');
+    rowDiv.className = 'tables-row';
+    ids.forEach(id => {
+      const t = serverTables[String(id)];
+      if (!t) return;
+      const el = document.createElement('div');
+      el.className = 'table' + (t.billed ? ' billed' : '');
+      el.dataset.id = t.id;
+      el.dataset.capacity = t.capacity;
+      el.innerHTML = `
+        <div class="capacity">${t.capacity} pac</div>
+        <div class="number">${t.id}</div>
+        <div class="timer" data-timer-for="${t.id}">${formatElapsed(t.start)}</div>
+      `;
+      el.addEventListener('click', () => {
+        if (localStorage.getItem('loggedIn') !== 'true') {
+          alert('Please login to change table state.');
+          return;
         }
+        if (!t.billed) socket.emit('start_table', { id: t.id });
+        else socket.emit('clear_table', { id: t.id });
       });
-      clearedList.appendChild(div);
+      rowDiv.appendChild(el);
+      attachTimerFor(t.id);
     });
+    wrapper.appendChild(rowDiv);
   }
 
-  function formatElapsed(start) {
-    if (!start) return '';
-    const diff = Date.now() - start;
-    const mins = Math.floor(diff / 60000);
-    const secs = Math.floor((diff % 60000) / 1000);
-    return `${String(mins).padStart(2,'0')}:${String(secs).padStart(2,'0')}`;
-  }
+  makeRow([1,2,3,4,5,6,7,8]);
+  makeRow([9,10,11,12,14]);
+  makeRow([15,16,18,19,20,21,22]);
 
-  function attachTimerFor(id) {
-    if (timers[id]) return;
-    timers[id] = {
-      interval: setInterval(() => {
-        const el = document.querySelector(`.timer[data-timer-for="${id}"]`);
-        const t = serverTables[String(id)];
-        if (el && t) {
-          el.textContent = formatElapsed(t.start);
-        }
-      }, 1000)
-    };
-  }
+  tablesContainer.appendChild(wrapper);
+  renderStatusList();
+}
 
-  function removeTimerFor(id) {
-    if (timers[id]) {
-      clearInterval(timers[id].interval);
-      delete timers[id];
-    }
-  }
-
-  socket.on('init', (payload) => {
-    serverTables = payload.tables || {};
-    renderTables();
-    renderClearedList(payload.recentCleared || []);
+function renderStatusList() {
+  statusList.innerHTML = '';
+  Object.values(serverTables).filter(t => t.billed).forEach(t => {
+    const div = document.createElement('div');
+    div.textContent = `Table ${t.id} (${t.capacity} pac) - billed`;
+    statusList.appendChild(div);
   });
+}
 
-  socket.on('tables_update', (payload) => {
-    const changed = payload.tables || {};
-    Object.keys(changed).forEach(k => {
-      serverTables[k] = changed[k];
-      if (!serverTables[k].billed) {
-        removeTimerFor(serverTables[k].id);
-      } else {
-        attachTimerFor(serverTables[k].id);
-      }
+function renderClearedList(arr) {
+  clearedList.innerHTML = '';
+  arr.forEach(s => {
+    const div = document.createElement('div');
+    div.textContent = s;
+    div.addEventListener('click', () => {
+      socket.emit('remove_cleared_item', s);
     });
-    if (payload.recentCleared) {
-      renderClearedList(payload.recentCleared);
-    }
-    renderTables();
+    clearedList.appendChild(div);
   });
+}
 
-  socket.on('full_reset', (payload) => {
-    serverTables = payload.tables || {};
-    renderTables();
-    renderClearedList(payload.recentCleared || []);
-  });
+function formatElapsed(start) {
+  if (!start) return '';
+  const diff = Date.now() - start;
+  const mins = Math.floor(diff / 60000);
+  const secs = Math.floor((diff % 60000) / 1000);
+  return `${String(mins).padStart(2,'0')}:${String(secs).padStart(2,'0')}`;
+}
 
-  resetBtn.addEventListener('click', () => {
-    if (!confirm('Reset all tables (clear billed states)?')) return;
-    socket.emit('reset_all');
-  });
+function attachTimerFor(id) {
+  if (timers[id]) return;
+  timers[id] = {
+    interval: setInterval(() => {
+      const el = document.querySelector(`.timer[data-timer-for="${id}"]`);
+      const t = serverTables[String(id)];
+      if (el && t) el.textContent = formatElapsed(t.start);
+    }, 1000)
+  };
+}
 
-  refreshBtn.addEventListener('click', () => {
-    window.location.reload();
-  });
+function removeTimerFor(id) {
+  if (timers[id]) {
+    clearInterval(timers[id].interval);
+    delete timers[id];
+  }
+}
 
-  window.addEventListener('beforeunload', () => {
-    Object.values(timers).forEach(t => clearInterval(t.interval));
+socket.on('init', payload => {
+  serverTables = payload.tables || {};
+  renderTables();
+  renderClearedList(payload.recentCleared || []);
+});
+
+socket.on('tables_update', payload => {
+  const changed = payload.tables || {};
+  Object.keys(changed).forEach(k => {
+    serverTables[k] = changed[k];
+    if (!serverTables[k].billed) removeTimerFor(serverTables[k].id);
+    else attachTimerFor(serverTables[k].id);
   });
+  if (payload.recentCleared) renderClearedList(payload.recentCleared);
+  renderTables();
+});
+
+socket.on('full_reset', payload => {
+  serverTables = payload.tables || {};
+  renderTables();
+  renderClearedList(payload.recentCleared || []);
+});
+
+resetBtn.addEventListener('click', () => {
+  if (!confirm('Reset all tables (clear billed states)?')) return;
+  socket.emit('reset_all');
+});
+refreshBtn.addEventListener('click', () => window.location.reload());
+window.addEventListener('beforeunload', () => {
+  Object.values(timers).forEach(t => clearInterval(t.interval));
+});
 </script>
 </body>
 </html>
