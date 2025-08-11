@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Interactive Restaurant Floorplan - Secure</title>
+  <style>
+    body{margin:0;font-family:Arial, sans-serif;background:#f7f7f7;display:flex;flex-direction:column;min-height:100vh;}
+    .hidden{display:none;}
+    .login-container{display:flex;justify-content:center;align-items:center;flex:1;}
+    .login-box{background:#fff;padding:20px;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.1);}
+    .floorplan{flex:1;background:#fff;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.1);display:flex;justify-content:center;align-items:center;margin:16px;}
+    .floating-status{position:fixed;bottom:16px;right:16px;background:#fff;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.2);padding:16px;max-width:250px;}
+    svg{max-width:100%;height:auto;}
+    .table{cursor:pointer;}
+    .billed rect{fill:#90ee90;}
+    .selected rect{stroke:black;stroke-width:3;}
+    .selected text{font-weight:bold;}
+    text.timer-text{font-size:18px;fill:#333;}
+    text.capacity-text{font-size:20px;fill:#555;}
+    text.table-number{font-size:24px;fill:#000;}
+    #clearedList div{cursor:pointer;}
+  </style>
+</head>
+<body>
+  <div class="login-container" id="loginScreen">
+    <div class="login-box">
+      <h2>Login</h2>
+      <input type="text" id="username" placeholder="Username"/><br/><br/>
+      <input type="password" id="password" placeholder="Password"/><br/><br/>
+      <button id="loginBtn">Sign In</button>
+      <div id="loginError" style="color:red;margin-top:8px;"></div>
+    </div>
+  </div>
+
+  <div id="mainContent" class="hidden">
+    <div class="floorplan">
+      <svg id="floorplan" viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+        <rect x="0" y="0" width="1200" height="800" fill="#fafafa" stroke="#ccc" stroke-width="2"/>
+        <g id="tables"></g>
+      </svg>
+    </div>
+    <div class="floating-status">
+      <h3>Billed Tables</h3>
+      <div id="statusList"></div>
+      <h4>Recently Cleared</h4>
+      <div id="clearedList"></div>
+      <button id="resetBtn">Reset</button>
+    </div>
+  </div>
+
+  <script>
+    const loginBtn=document.getElementById('loginBtn');
+    loginBtn.addEventListener('click',()=>{
+      const user=document.getElementById('username').value.trim();
+      const pass=document.getElementById('password').value.trim();
+      if(user==='admin' && pass==='1234'){
+        document.getElementById('loginScreen').classList.add('hidden');
+        document.getElementById('mainContent').classList.remove('hidden');
+      } else {
+        document.getElementById('loginError').textContent='Invalid username or password';
+      }
+    });
+
+    const tablesGroup=document.getElementById('tables');
+    const resetBtn=document.getElementById('resetBtn');
+    const statusList=document.getElementById('statusList');
+    const clearedList=document.getElementById('clearedList');
+    let timers={};
+    let recentCleared=[];
+    const rows=[[1,8],[9,14],[15,22]];
+    const tableSize=100;
+    const gap=10;
+
+    rows.forEach((range,rowIndex)=>{
+      let [start,end]=range;
+      let col=0;
+      for(let id=start;id<=end;id++){
+        if(id===13||id===17) continue;
+        const g=document.createElementNS('http://www.w3.org/2000/svg','g');
+        g.setAttribute('class','table');
+        g.dataset.id=id;
+        let cap=2;
+        if(id>=9&&id<=14) cap=4;
+        else if(id>=15&&id<=19) cap=8;
+        else if(id%2===0) cap=3;
+        g.dataset.capacity=cap;
+
+        let x=col*(tableSize+gap);
+        let y=rowIndex*(tableSize+gap);
+        g.setAttribute('transform',`translate(${x},${y})`);
+
+        const rect=document.createElementNS('http://www.w3.org/2000/svg','rect');
+        rect.setAttribute('width',tableSize);
+        rect.setAttribute('height',tableSize);
+        rect.setAttribute('fill','#e6f0ff');
+
+        const capText=document.createElementNS('http://www.w3.org/2000/svg','text');
+        capText.setAttribute('x',tableSize/2);
+        capText.setAttribute('y',25);
+        capText.setAttribute('text-anchor','middle');
+        capText.setAttribute('class','capacity-text');
+        capText.textContent=`${cap} pac`;
+
+        const numText=document.createElementNS('http://www.w3.org/2000/svg','text');
+        numText.setAttribute('x',tableSize/2);
+        numText.setAttribute('y',60);
+        numText.setAttribute('text-anchor','middle');
+        numText.setAttribute('class','table-number');
+        numText.textContent=id;
+
+        const timerText=document.createElementNS('http://www.w3.org/2000/svg','text');
+        timerText.setAttribute('x',tableSize/2);
+        timerText.setAttribute('y',85);
+        timerText.setAttribute('text-anchor','middle');
+        timerText.setAttribute('class','timer-text');
+        timerText.textContent='';
+
+        g.appendChild(rect);
+        g.appendChild(capText);
+        g.appendChild(numText);
+        g.appendChild(timerText);
+        tablesGroup.appendChild(g);
+        col++;
+      }
+    });
+
+    document.addEventListener('click',function(e){
+      if(!document.getElementById('mainContent').classList.contains('hidden')){
+        const t=e.target.closest('.table');
+        if(t){
+          if(!t.classList.contains('billed')){
+            t.classList.add('billed');
+            startTimer(t);
+          } else {
+            clearTable(t);
+          }
+        }
+        if(e.target.closest('#clearedList div')){
+          const item=e.target.closest('#clearedList div').textContent;
+          recentCleared=recentCleared.filter(c=>c!==item);
+          renderStatus();
+        }
+      }
+    });
+
+    function startTimer(table){
+      const id=table.dataset.id;
+      const timerText=table.querySelector('.timer-text');
+      timers[id]={start:Date.now(),elapsed:'00:00'};
+      timers[id].interval=setInterval(()=>{
+        let diff=Date.now()-timers[id].start;
+        let mins=Math.floor(diff/60000);
+        let secs=Math.floor((diff%60000)/1000);
+        timers[id].elapsed=`${String(mins).padStart(2,'0')}:${String(secs).padStart(2,'0')}`;
+        timerText.textContent=timers[id].elapsed;
+        renderStatus();
+      },1000);
+    }
+
+    function clearTable(table){
+      table.classList.remove('billed');
+      const id=table.dataset.id;
+      clearInterval(timers[id]?.interval);
+      delete timers[id];
+      table.querySelector('.timer-text').textContent='';
+      recentCleared.unshift(`Table ${id} (${table.dataset.capacity} pac)`);
+      renderStatus();
+    }
+
+    function renderStatus(){
+      statusList.innerHTML='';
+      document.querySelectorAll('.table.billed').forEach(t=>{
+        statusList.innerHTML+=`<div>Table ${t.dataset.id} (${t.dataset.capacity} pac) - billed</div>`;
+      });
+      clearedList.innerHTML=recentCleared.map(t=>`<div>${t}</div>`).join('');
+    }
+
+    resetBtn.addEventListener('click',()=>{
+      document.querySelectorAll('.table').forEach(t=>clearTable(t));
+      recentCleared=[];
+      renderStatus();
+    });
+  </script>
+</body>
+</html>
