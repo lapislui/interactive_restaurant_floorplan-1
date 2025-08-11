@@ -134,15 +134,24 @@
 
   /* Phones */
   @media (max-width: 480px) {
-    .tables-row {
-      grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
-      gap: 8px;
-    }
-    .table { min-height: 60px; padding: 6px; }
-    .number { font-size: 16px; }
-    .capacity { font-size: 11px; }
-    .timer { font-size: 11px; }
+  .container {
+    flex-direction: column;
   }
+  .tables-container {
+    width: 100%;
+  }
+  .tables-row {
+    width: 100%;
+    grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+    gap: 8px;
+  }
+  .table { 
+    min-height: 60px; 
+    padding: 6px; 
+  }
+  .number { font-size: 16px; }
+  .capacity, .timer { font-size: 11px; }
+}
 </style>
 
 </head>
