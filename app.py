@@ -6,7 +6,7 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret'
 socketio = SocketIO(app)
 
-# Table data: billed = active, start = timestamp
+# Initialize tables (skipping 13 and 17)
 tables = {str(i): {'id': i, 'capacity': 4, 'billed': False, 'start': None}
           for i in list(range(1, 23)) if i not in (13, 17)}
 
@@ -27,7 +27,7 @@ def handle_start_table(data):
         tables[tid]['billed'] = True
         tables[tid]['start'] = int(time.time() * 1000)
         socketio.emit('tables_update', {
-            'tables': {tid: tables[tid]},
+            'tables': tables,
             'recentCleared': recentCleared
         }, broadcast=True)
 
@@ -42,7 +42,7 @@ def handle_clear_table(data):
         if len(recentCleared) > 10:
             recentCleared.pop()
         socketio.emit('tables_update', {
-            'tables': {tid: tables[tid]},
+            'tables': tables,
             'recentCleared': recentCleared
         }, broadcast=True)
 
