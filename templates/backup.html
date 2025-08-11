@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Realtime Restaurant Floorplan</title>
+
+  <!-- Socket.IO client -->
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+
+  <style>
+  :root {
+    --bg: #f7f7f7;
+    --card: #fff;
+    --accent: #e6f0ff;
+    --billed: #90ee90;
+  }
+  body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+  .hidden { display: none !important; }
+  .login-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex: 1;
+  }
+  .login-box {
+    background: var(--card);
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+    width: 90%;
+    max-width: 320px;
+  }
+  .topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 16px;
+    background: var(--card);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+
+  .container {
+    display: flex;
+    gap: 12px;
+    padding: 12px;
+    align-items: flex-start;
+  }
+
+  /* Grid of tables */
+  .tables-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+    gap: 10px;
+    padding: 10px;
+    flex: 1;
+    background: var(--card);
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+    min-width: 0;
+  }
+  .table {
+    background: var(--accent);
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 8px;
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.06);
+    min-height: 90px;
+    user-select: none;
+  }
+  .table.billed { background: var(--billed); }
+  .capacity { font-size: 12px; color: #444; }
+  .number { font-size: 20px; font-weight: 700; margin: 6px 0; }
+  .timer { font-size: 12px; color: #333; }
+
+  .floating-panel {
+    width: 320px;
+    max-width: 40%;
+    background: var(--card);
+    border-radius: 8px;
+    padding: 12px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+    height: fit-content;
+  }
+  .floating-panel h3 { margin: 0 0 8px 0; }
+  #statusList div { margin-bottom: 6px; }
+  #clearedList div { cursor: pointer; margin-bottom: 6px; color: #333; }
+
+  button {
+    background: #1976d2;
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  button.secondary { background: #555; }
+  .small { padding: 6px 8px; font-size: 13px; }
+
+  /* Tablet/mobile: stack panel below tables, keep multi-column grid */
+  @media (max-width: 900px) {
+    .container { flex-direction: column; }
+    .tables-container {
+      width: 100%;
+      grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+    }
+    .floating-panel {
+      width: 100%;
+      max-width: none;
+      border-radius: 6px;
+      margin-top: 10px;
+    }
+  }
+
+  /* Phones */
+  @media (max-width: 480px) {
+    .tables-container {
+      grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+      gap: 8px;
+    }
+    .table { min-height: 60px; padding: 6px; }
+    .number { font-size: 16px; }
+    .capacity { font-size: 11px; }
+    .timer { font-size: 11px; }
+  }
+</style>
+
+</head>
+<body>
+  <div class="topbar">
+    <div><strong>Realtime Floorplan</strong></div>
+    <div>
+      <button id="logoutBtn" class="small">Logout</button>
+    </div>
+  </div>
+
+  <!-- LOGIN -->
+  <div class="login-container" id="loginScreen">
+    <div class="login-box">
+      <h2>Login</h2>
+      <input type="text" id="username" placeholder="Username" style="width:100%"/><br/><br/>
+      <input type="password" id="password" placeholder="Password" style="width:100%"/><br/><br/>
+      <button id="loginBtn">Sign In</button>
+      <div id="loginError" style="color:red;margin-top:8px;"></div>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div id="mainContent" class="hidden">
+    <div class="container">
+      <div class="tables-container" id="tablesContainer" role="grid" aria-label="Tables"></div>
+
+      <div class="floating-panel">
+        <h3>Billed Tables</h3>
+        <div id="statusList"></div>
+
+        <h4>Recently Cleared</h4>
+        <div id="clearedList"></div>
+
+        <div style="display:flex;gap:8px;margin-top:10px;">
+          <button id="resetBtn" class="small secondary">Reset All</button>
+          <button id="refreshBtn" class="small">Refresh</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  // --- Socket connection ---
+  const socket = io(); // connects to same origin
+
+  // Local state helpers
+  let timers = {}; // timers on client for updating UI every second
+  let serverTables = {}; // mirror of server state
+
+  // DOM refs
+  const loginScreen = document.getElementById('loginScreen');
+  const mainContent = document.getElementById('mainContent');
+  const loginBtn = document.getElementById('loginBtn');
+  const loginError = document.getElementById('loginError');
+  const usernameInput = document.getElementById('username');
+  const passwordInput = document.getElementById('password');
+  const tablesContainer = document.getElementById('tablesContainer');
+  const statusList = document.getElementById('statusList');
+  const clearedList = document.getElementById('clearedList');
+  const resetBtn = document.getElementById('resetBtn');
+  const refreshBtn = document.getElementById('refreshBtn');
+  const logoutBtn = document.getElementById('logoutBtn');
+
+  // Show main if logged in in localStorage
+  function checkLoginOnLoad() {
+    if (localStorage.getItem('loggedIn') === 'true') {
+      loginScreen.classList.add('hidden');
+      mainContent.classList.remove('hidden');
+    }
+  }
+  checkLoginOnLoad();
+
+  loginBtn.addEventListener('click', () => {
+    const user = usernameInput.value.trim();
+    const pass = passwordInput.value.trim();
+    if (user === 'admin' && pass === '1234') {
+      localStorage.setItem('loggedIn', 'true');
+      loginScreen.classList.add('hidden');
+      mainContent.classList.remove('hidden');
+      loginError.textContent = '';
+    } else {
+      loginError.textContent = 'Invalid username or password';
+    }
+  });
+
+  logoutBtn.addEventListener('click', () => {
+    localStorage.removeItem('loggedIn');
+    // stop timers
+    Object.values(timers).forEach(t => clearInterval(t.interval));
+    timers = {};
+    serverTables = {};
+    // show login
+    mainContent.classList.add('hidden');
+    loginScreen.classList.remove('hidden');
+  });
+
+  // Render / update functions
+  function renderTables() {
+    tablesContainer.innerHTML = '';
+    const keys = Object.keys(serverTables).sort((a,b) => (+a) - (+b));
+    keys.forEach(k => {
+      const t = serverTables[k];
+      const el = document.createElement('div');
+      el.className = 'table' + (t.billed ? ' billed' : '');
+      el.dataset.id = t.id;
+      el.dataset.capacity = t.capacity;
+      el.innerHTML = `
+        <div class="capacity">${t.capacity} pac</div>
+        <div class="number">${t.id}</div>
+        <div class="timer" data-timer-for="${t.id}">${formatElapsed(t.start)}</div>
+      `;
+      // Click behavior: only if logged in show action
+      el.addEventListener('click', () => {
+        if (localStorage.getItem('loggedIn') !== 'true') {
+          alert('Please login to change table state.');
+          return;
+        }
+        if (!t.billed) {
+          socket.emit('start_table', { id: t.id });
+        } else {
+          socket.emit('clear_table', { id: t.id });
+        }
+      });
+      tablesContainer.appendChild(el);
+      // ensure client timer set
+      attachTimerFor(t.id);
+    });
+    renderStatusList();
+  }
+
+  function renderStatusList() {
+    // billed list
+    statusList.innerHTML = '';
+    Object.values(serverTables).filter(t => t.billed).forEach(t => {
+      const div = document.createElement('div');
+      div.textContent = `Table ${t.id} (${t.capacity} pac) - billed`;
+      statusList.appendChild(div);
+    });
+  }
+
+  function renderClearedList(arr) {
+    clearedList.innerHTML = '';
+    arr.forEach(s => {
+      const div = document.createElement('div');
+      div.textContent = s;
+      div.addEventListener('click', () => {
+        // remove clicked one locally (no need to tell server)
+        const idx = arr.indexOf(s);
+        if (idx !== -1) {
+          arr.splice(idx, 1);
+          renderClearedList(arr);
+        }
+      });
+      clearedList.appendChild(div);
+    });
+  }
+
+  // Friendly elapsed display based on server start (ms) or null
+  function formatElapsed(start) {
+    if (!start) return '';
+    const diff = Date.now() - start;
+    const mins = Math.floor(diff / 60000);
+    const secs = Math.floor((diff % 60000) / 1000);
+    return `${String(mins).padStart(2,'0')}:${String(secs).padStart(2,'0')}`;
+  }
+
+  // Attach per-table interval to keep timer updated
+  function attachTimerFor(id) {
+    if (timers[id]) return;
+    timers[id] = {
+      interval: setInterval(() => {
+        const el = document.querySelector(`.timer[data-timer-for="${id}"]`);
+        const t = serverTables[String(id)];
+        if (el && t) {
+          el.textContent = formatElapsed(t.start);
+        }
+      }, 1000)
+    };
+  }
+
+  // Remove client timer when table cleared
+  function removeTimerFor(id) {
+    if (timers[id]) {
+      clearInterval(timers[id].interval);
+      delete timers[id];
+    }
+  }
+
+  // Socket event handlers
+  socket.on('connect', () => {
+    console.log('connected to server');
+  });
+
+  // initial state
+  socket.on('init', (payload) => {
+    serverTables = payload.tables || {};
+    renderTables();
+    renderClearedList(payload.recentCleared || []);
+  });
+
+  // partial update (server emits only changed tables and optionally recentCleared)
+  socket.on('tables_update', (payload) => {
+    const changed = payload.tables || {};
+    Object.keys(changed).forEach(k => {
+      serverTables[k] = changed[k];
+      if (!serverTables[k].billed) {
+        // cleared - remove timer text
+        removeTimerFor(serverTables[k].id);
+      } else {
+        attachTimerFor(serverTables[k].id);
+      }
+    });
+    if (payload.recentCleared) {
+      renderClearedList(payload.recentCleared);
+    }
+    renderTables();
+  });
+
+  // full reset event
+  socket.on('full_reset', (payload) => {
+    serverTables = payload.tables || {};
+    renderTables();
+    renderClearedList(payload.recentCleared || []);
+  });
+
+  socket.on('error', (d) => {
+    console.warn('server error:', d);
+  });
+
+  // UI buttons
+  resetBtn.addEventListener('click', () => {
+    if (!confirm('Reset all tables (clear billed states)?')) return;
+    socket.emit('reset_all');
+  });
+
+  refreshBtn.addEventListener('click', () => {
+    // request fresh state by reconnecting or asking server to re-send - simple approach: reload page
+    window.location.reload();
+  });
+
+  // cleanup timers when page unloads
+  window.addEventListener('beforeunload', () => {
+    Object.values(timers).forEach(t => clearInterval(t.interval));
+  });
+</script>
+</body>
+</html>
