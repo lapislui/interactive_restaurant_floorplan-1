@@ -12,9 +12,9 @@
   :root {
     --bg: #f7f7f7;
     --card: #fff;
-    --accent: #e6f0ff;
+    --accent: #e0e0e0;  /* Changed to grey for initial state */
     --billed: #90ee90;
-    --cleared: #ff6b6b;  /* Changed to red for cleared tables */
+    --cleared: #ff6b6b;
   }
   body {
     margin: 0;
@@ -242,8 +242,8 @@
       const t = serverTables[k];
       const el = document.createElement('div');
       // Add cleared class if table is in recently cleared list
-      const isCleared = !t.billed && t.start === null;
-      el.className = `table${t.billed ? ' billed' : ''}${isCleared ? ' cleared' : ''}`;
+      const isInRecentlyCleared = clearedList.textContent.includes(`Table ${t.id}`);
+      el.className = `table${t.billed ? ' billed' : ''}${isInRecentlyCleared ? ' cleared' : ''}`;
       el.dataset.id = t.id;
       el.dataset.capacity = t.capacity;
       el.innerHTML = `
@@ -258,16 +258,28 @@
           alert('Please login to change table state.');
           return;
         }
+        if (isInRecentlyCleared) {
+          // When clicking on red table, ask for confirmation
+          if (confirm(`Make Table ${t.id} available again?`)) {
+            // Remove from recently cleared and return to grey state
+            el.classList.remove('cleared');
+            const tableText = `Table ${t.id} (${t.capacity} pac)`;
+            const arr = Array.from(clearedList.children);
+            const idx = arr.findIndex(div => div.textContent.includes(tableText));
+            if (idx !== -1) {
+              arr[idx].remove();
+            }
+          }
+          return;
+        }
         if (!t.billed) {
           if (confirm(`Start billing Table ${t.id} (${t.capacity} pac)?`)) {
             socket.emit('start_table', { id: t.id });
           }
         } else {
           if (confirm(`Clear Table ${t.id} and move to recently cleared?`)) {
-            // First remove billed class and add cleared class for red color
             el.classList.remove('billed');
             el.classList.add('cleared');
-            // Send clear command to server after a short delay to show the red state
             setTimeout(() => {
               socket.emit('clear_table', { id: t.id });
             }, 300);
