@@ -14,6 +14,7 @@
     --card: #fff;
     --accent: #e6f0ff;
     --billed: #90ee90;
+    --cleared: #ff6b6b;  /* Changed to red for cleared tables */
   }
   body {
     margin: 0;
@@ -78,8 +79,10 @@
     box-shadow: 0 2px 4px rgba(0,0,0,0.06);
     min-height: 90px;
     user-select: none;
+    transition: background-color 0.3s ease;  /* Add smooth transition */
   }
   .table.billed { background: var(--billed); }
+  .table.cleared { background: var(--cleared); }  /* Add this for red cleared state */
   .capacity { font-size: 12px; color: #444; }
   .number { font-size: 20px; font-weight: 700; margin: 6px 0; }
   .timer { font-size: 12px; color: #333; }
@@ -238,7 +241,9 @@
     keys.forEach(k => {
       const t = serverTables[k];
       const el = document.createElement('div');
-      el.className = 'table' + (t.billed ? ' billed' : '');
+      // Add cleared class if table is in recently cleared list
+      const isCleared = !t.billed && t.start === null;
+      el.className = `table${t.billed ? ' billed' : ''}${isCleared ? ' cleared' : ''}`;
       el.dataset.id = t.id;
       el.dataset.capacity = t.capacity;
       el.innerHTML = `
@@ -246,20 +251,30 @@
         <div class="number">${t.id}</div>
         <div class="timer" data-timer-for="${t.id}">${formatElapsed(t.start)}</div>
       `;
-      // Click behavior: only if logged in show action
+      
+      // Click behavior
       el.addEventListener('click', () => {
         if (localStorage.getItem('loggedIn') !== 'true') {
           alert('Please login to change table state.');
           return;
         }
         if (!t.billed) {
-          socket.emit('start_table', { id: t.id });
+          if (confirm(`Start billing Table ${t.id} (${t.capacity} pac)?`)) {
+            socket.emit('start_table', { id: t.id });
+          }
         } else {
-          socket.emit('clear_table', { id: t.id });
+          if (confirm(`Clear Table ${t.id} and move to recently cleared?`)) {
+            // First remove billed class and add cleared class for red color
+            el.classList.remove('billed');
+            el.classList.add('cleared');
+            // Send clear command to server after a short delay to show the red state
+            setTimeout(() => {
+              socket.emit('clear_table', { id: t.id });
+            }, 300);
+          }
         }
       });
       tablesContainer.appendChild(el);
-      // ensure client timer set
       attachTimerFor(t.id);
     });
     renderStatusList();
