@@ -100,7 +100,10 @@ def handle_remove_cleared(data):
             if f"Table {tid}" in entry:
                 recent_cleared.remove(entry)
                 break
-        # Notify ALL clients about the update with both table and cleared list state
+        # Reset table state
+        tables[tid]["billed"] = False
+        tables[tid]["start"] = None
+        # Notify ALL clients about both table and cleared list updates
         socketio.emit("tables_update", {
             "tables": {tid: tables[tid]}, 
             "recentCleared": recent_cleared
