@@ -213,13 +213,21 @@
   loginBtn.addEventListener('click', () => {
     const user = usernameInput.value.trim();
     const pass = passwordInput.value.trim();
-    if (user === 'admin' && pass === '1234') {
+    
+    socket.emit('authenticate', {
+      username: user,
+      password: pass
+    });
+  });
+
+  socket.on('auth_response', (response) => {
+    if (response.success) {
       localStorage.setItem('loggedIn', 'true');
       loginScreen.classList.add('hidden');
       mainContent.classList.remove('hidden');
       loginError.textContent = '';
     } else {
-      loginError.textContent = 'Invalid username or password';
+      loginError.textContent = response.message || 'Invalid username or password';
     }
   });
 

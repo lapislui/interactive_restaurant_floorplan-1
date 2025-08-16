@@ -106,6 +106,21 @@ def handle_remove_cleared(data):
             "recentCleared": recent_cleared
         })
 
+# Add these constants near the top of the file
+ADMIN_USERNAME = "admin"
+ADMIN_PASSWORD = "1234"
+
+# Add new authentication endpoint
+@socketio.on("authenticate")
+def handle_auth(data):
+    username = data.get("username")
+    password = data.get("password")
+    
+    if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+        emit("auth_response", {"success": True})
+    else:
+        emit("auth_response", {"success": False, "message": "Invalid username or password"})
+
 if __name__ == "__main__":
     # Use eventlet for WebSocket concurrency
     socketio.run(app, host="0.0.0.0", port=5000)
