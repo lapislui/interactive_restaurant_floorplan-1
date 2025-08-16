@@ -241,11 +241,9 @@
     keys.forEach(k => {
       const t = serverTables[k];
       const el = document.createElement('div');
-      // Only add classes based on table state
-      el.className = 'table';  // Start with base class (grey)
-      if (t.billed) {
-        el.classList.add('billed'); // Add green if billed
-      }
+      // Add cleared class if table is in recently cleared list
+      const isInRecentlyCleared = clearedList.textContent.includes(`Table ${t.id}`);
+      el.className = `table${t.billed ? ' billed' : ''}${isInRecentlyCleared ? ' cleared' : ''}`;
       el.dataset.id = t.id;
       el.dataset.capacity = t.capacity;
       el.innerHTML = `
@@ -260,16 +258,25 @@
           alert('Please login to change table state.');
           return;
         }
+        if (isInRecentlyCleared) {
+          // Remove from recently cleared and return to grey state
+          el.classList.remove('cleared');
+          const tableText = `Table ${t.id} (${t.capacity} pac)`;
+          const arr = Array.from(clearedList.children);
+          const idx = arr.findIndex(div => div.textContent.includes(tableText));
+          if (idx !== -1) {
+            arr[idx].remove();
+          }
+          return;
+        }
         if (!t.billed) {
           if (confirm(`Start billing Table ${t.id} (${t.capacity} pac)?`)) {
             socket.emit('start_table', { id: t.id });
           }
         } else {
           if (confirm(`Clear Table ${t.id} and move to recently cleared?`)) {
-            // First remove billed class and add cleared class for red color
             el.classList.remove('billed');
             el.classList.add('cleared');
-            // Send clear command to server after a short delay to show the red state
             setTimeout(() => {
               socket.emit('clear_table', { id: t.id });
             }, 300);
