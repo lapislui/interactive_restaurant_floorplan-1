@@ -88,6 +88,24 @@ def handle_reset():
     recent_cleared.clear()
     socketio.emit("full_reset", {"tables": tables, "recentCleared": recent_cleared})
 
+@socketio.on("remove_from_cleared")
+def handle_remove_cleared(data):
+    """
+    Remove table from recently cleared list and notify all clients
+    """
+    tid = str(data.get("id"))
+    if tid in tables:
+        # Find and remove from recent_cleared
+        for entry in recent_cleared[:]:
+            if f"Table {tid}" in entry:
+                recent_cleared.remove(entry)
+                break
+        # Notify ALL clients about the update with both table and cleared list state
+        socketio.emit("tables_update", {
+            "tables": {tid: tables[tid]}, 
+            "recentCleared": recent_cleared
+        })
+
 if __name__ == "__main__":
     # Use eventlet for WebSocket concurrency
     socketio.run(app, host="0.0.0.0", port=5000)
