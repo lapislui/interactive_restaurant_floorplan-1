@@ -267,11 +267,11 @@
           return;
         }
         if (!t.billed) {
-          if (confirm(`Start billing Table ${t.id} (${t.capacity} pac)?`)) {
+          if (confirm(`Book Table ${t.id} (${t.capacity} pac)?`)) {
             socket.emit('start_table', { id: t.id });
           }
         } else {
-          if (confirm(`Clear Table ${t.id} and move to recently cleared?`)) {
+          if (confirm(`Table ${t.id} billed?`)) {
             el.classList.remove('billed');
             el.classList.add('cleared');
             setTimeout(() => {
