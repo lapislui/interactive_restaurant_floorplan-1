@@ -213,21 +213,13 @@
   loginBtn.addEventListener('click', () => {
     const user = usernameInput.value.trim();
     const pass = passwordInput.value.trim();
-    
-    socket.emit('authenticate', {
-      username: user,
-      password: pass
-    });
-  });
-
-  socket.on('auth_response', (response) => {
-    if (response.success) {
+    if (user === 'admin' && pass === '1234') {
       localStorage.setItem('loggedIn', 'true');
       loginScreen.classList.add('hidden');
       mainContent.classList.remove('hidden');
       loginError.textContent = '';
     } else {
-      loginError.textContent = response.message || 'Invalid username or password';
+      loginError.textContent = 'Invalid username or password';
     }
   });
 
@@ -269,8 +261,14 @@
         if (isInRecentlyCleared) {
           // When clicking on red table, ask for confirmation
           if (confirm(`Make Table ${t.id} available again?`)) {
-            // Instead of handling locally, emit to server to sync across all clients
-            socket.emit('remove_from_cleared', { id: t.id });
+            // Remove from recently cleared and return to grey state
+            el.classList.remove('cleared');
+            const tableText = `Table ${t.id} (${t.capacity} pac)`;
+            const arr = Array.from(clearedList.children);
+            const idx = arr.findIndex(div => div.textContent.includes(tableText));
+            if (idx !== -1) {
+              arr[idx].remove();
+            }
           }
           return;
         }
@@ -310,44 +308,16 @@
       const div = document.createElement('div');
       div.textContent = s;
       div.addEventListener('click', () => {
-        // Emit event to server to sync removal across all clients
-        const tableId = s.match(/Table (\d+)/)[1];
-        socket.emit('remove_from_cleared', { id: tableId });
+        // remove clicked one locally (no need to tell server)
+        const idx = arr.indexOf(s);
+        if (idx !== -1) {
+          arr.splice(idx, 1);
+          renderClearedList(arr);
+        }
       });
       clearedList.appendChild(div);
     });
   }
-
-  // Click behavior for tables
-  el.addEventListener('click', () => {
-    if (localStorage.getItem('loggedIn') !== 'true') {
-      alert('Please login to change table state.');
-      return;
-    }
-    if (isInRecentlyCleared) {
-      if (confirm(`Make Table ${t.id} available again?`)) {
-        // Emit event to server instead of handling locally
-        socket.emit('remove_from_cleared', { id: t.id });
-      }
-      return;
-    }
-    if (!t.billed) {
-      if (confirm(`Start billing Table ${t.id} (${t.capacity} pac)?`)) {
-        socket.emit('start_table', { id: t.id });
-      }
-    } else {
-      if (confirm(`Clear Table ${t.id} and move to recently cleared?`)) {
-        el.classList.remove('billed');
-        el.classList.add('cleared');
-        setTimeout(() => {
-          socket.emit('clear_table', { id: t.id });
-        }, 300);
-      }
-    }
-  });
-  tablesContainer.appendChild(el);
-  attachTimerFor(t.id);
-});
 
   // Friendly elapsed display based on server start (ms) or null
   function formatElapsed(start) {
