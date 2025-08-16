@@ -259,13 +259,16 @@
           return;
         }
         if (isInRecentlyCleared) {
-          // Remove from recently cleared and return to grey state
-          el.classList.remove('cleared');
-          const tableText = `Table ${t.id} (${t.capacity} pac)`;
-          const arr = Array.from(clearedList.children);
-          const idx = arr.findIndex(div => div.textContent.includes(tableText));
-          if (idx !== -1) {
-            arr[idx].remove();
+          // When clicking on red table, ask for confirmation
+          if (confirm(`Make Table ${t.id} available again?`)) {
+            // Remove from recently cleared and return to grey state
+            el.classList.remove('cleared');
+            const tableText = `Table ${t.id} (${t.capacity} pac)`;
+            const arr = Array.from(clearedList.children);
+            const idx = arr.findIndex(div => div.textContent.includes(tableText));
+            if (idx !== -1) {
+              arr[idx].remove();
+            }
           }
           return;
         }
