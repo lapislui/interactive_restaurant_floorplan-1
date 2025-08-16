@@ -20,15 +20,28 @@ def init_tables():
     for r in rows:
         start, end = r
         for tid in range(start, end+1):
-            if tid in (13,17):
+            if tid in (13,17):  # Skip these table numbers
                 continue
-            cap = 2
-            if 9 <= tid <= 14:
+                
+            # Default capacity
+            cap = 4  # Default for table 20-22
+            
+            # Special capacity assignments
+            if tid == 1:
                 cap = 4
-            elif 15 <= tid <= 19:
+            elif tid in (2,3,4,5):
+                cap = 6
+            elif tid == 6:
+                cap = 2
+            elif tid == 7:
+                cap = 6
+            elif tid == 8:
                 cap = 8
-            elif tid % 2 == 0:
-                cap = 3
+            elif tid in (9,10,11,12,14):
+                cap = 4
+            elif tid in (15,16,18,19):
+                cap = 6
+                
             tables[str(tid)] = {
                 "id": tid,
                 "capacity": cap,
