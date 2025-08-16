@@ -12,9 +12,9 @@
   :root {
     --bg: #f7f7f7;
     --card: #fff;
-    --accent: #e6f0ff;
+    --accent: #e0e0e0;  /* Changed to grey for initial state */
     --billed: #90ee90;
-    --cleared: #ff6b6b;  /* Changed to red for cleared tables */
+    --cleared: #ff6b6b;
   }
   body {
     margin: 0;
@@ -241,9 +241,11 @@
     keys.forEach(k => {
       const t = serverTables[k];
       const el = document.createElement('div');
-      // Add cleared class if table is in recently cleared list
-      const isCleared = !t.billed && t.start === null;
-      el.className = `table${t.billed ? ' billed' : ''}${isCleared ? ' cleared' : ''}`;
+      // Only add classes based on table state
+      el.className = 'table';  // Start with base class (grey)
+      if (t.billed) {
+        el.classList.add('billed'); // Add green if billed
+      }
       el.dataset.id = t.id;
       el.dataset.capacity = t.capacity;
       el.innerHTML = `
