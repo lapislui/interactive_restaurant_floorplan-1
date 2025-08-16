@@ -267,10 +267,13 @@
           return;
         }
         if (isInRecentlyCleared) {
-          // When clicking on red table, ask for confirmation
-          if (confirm(`Make Table ${t.id} available again?`)) {
-            // Instead of handling locally, emit to server to sync across all clients
-            socket.emit('remove_from_cleared', { id: t.id });
+          // Remove from recently cleared and return to grey state
+          el.classList.remove('cleared');
+          const tableText = `Table ${t.id} (${t.capacity} pac)`;
+          const arr = Array.from(clearedList.children);
+          const idx = arr.findIndex(div => div.textContent.includes(tableText));
+          if (idx !== -1) {
+            arr[idx].remove();
           }
           return;
         }
