@@ -241,45 +241,59 @@
     keys.forEach(k => {
       const t = serverTables[k];
       const el = document.createElement('div');
-      // Add cleared class if table is in recently cleared list
-      const isInRecentlyCleared = clearedList.textContent.includes(`Table ${t.id}`);
+      
+      // Fix the table matching with exact table number matching
+      const tableIdentifier = `Table ${t.id} (${t.capacity} pac)`;
+      const isInRecentlyCleared = clearedList.textContent.split('\n')
+        .some(text => {
+          // Add special handling for tables 1 and 2
+          if (t.id <= 2) {
+            return text.trim() === `Table 0${t.id} (${t.capacity} pac)`;
+          }
+          return text.trim() === tableIdentifier;
+        });
+      
       el.className = `table${t.billed ? ' billed' : ''}${isInRecentlyCleared ? ' cleared' : ''}`;
       el.dataset.id = t.id;
       el.dataset.capacity = t.capacity;
       el.innerHTML = `
         <div class="capacity">${t.capacity} pac</div>
-        <div class="number">${t.id}</div>
+        <div class="number">${t.id <= 2 ? '0' + t.id : t.id}</div>
         <div class="timer" data-timer-for="${t.id}">${formatElapsed(t.start)}</div>
       `;
       
-      // Click behavior
+      // Update click handler
       el.addEventListener('click', () => {
         if (localStorage.getItem('loggedIn') !== 'true') {
           alert('Please login to change table state.');
           return;
         }
+
+        const currentTableId = t.id.toString();
+        const tableText = t.id <= 2 ? `Table 0${currentTableId}` : `Table ${currentTableId}`;
+        
         if (isInRecentlyCleared) {
-          // When clicking on red table, ask for confirmation
-          if (confirm(`Make Table ${t.id} available again?`)) {
-            // Instead of handling locally, emit to server to sync across all clients
-            socket.emit('remove_from_cleared', { id: t.id });
+          if (confirm(`Make ${tableText} available again?`)) {
+            socket.emit('remove_from_cleared', { id: currentTableId });
           }
           return;
         }
+
         if (!t.billed) {
-          if (confirm(`Book Table ${t.id} (${t.capacity} pac)?`)) {
-            socket.emit('start_table', { id: t.id });
+          if (confirm(`Book ${tableText} (${t.capacity} pac)?`)) {
+            socket.emit('start_table', { id: currentTableId });
           }
         } else {
-          if (confirm(`Table ${t.id} billed?`)) {
+          if (confirm(`${tableText} billed?`)) {
             el.classList.remove('billed');
             el.classList.add('cleared');
             setTimeout(() => {
-              socket.emit('clear_table', { id: t.id });
+              socket.emit('clear_table', { id: currentTableId });
             }, 300);
           }
         }
       });
+      
       tablesContainer.appendChild(el);
       attachTimerFor(t.id);
     });
