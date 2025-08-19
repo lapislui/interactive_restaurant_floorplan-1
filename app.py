@@ -12,6 +12,7 @@ tables = {}
 recent_cleared = []  # list of strings e.g. "Table 3 (4 pac)"
 
 # Initialize table layout consistent with client (skip 13 and 17 as before)
+# Update the table structure in init_tables() function
 def init_tables():
     global tables
     if tables:
@@ -46,6 +47,7 @@ def init_tables():
                 "id": tid,
                 "capacity": cap,
                 "billed": False,
+                "cleared": False,
                 "start": None  # epoch ms when billing started
             }
 
@@ -75,17 +77,34 @@ def handle_start(data):
     else:
         emit("error", {"message": "invalid table id"})
 
-@socketio.on("clear_table")
-def handle_clear(data):
+@socketio.on("bill_table")
+def handle_bill(data):
     """
-    data: { id: <number> }
-    Server clears billed flag and resets start. Adds to recent_cleared list.
+    data: { id: <number>, tableIdentifier: <string> }
+    Server changes state from billed to cleared (red to green)
     """
     tid = str(data.get("id"))
     if tid in tables:
         tables[tid]["billed"] = False
+        tables[tid]["cleared"] = True
+        # Keep the timer running
+        socketio.emit("tables_update", {"tables": {tid: tables[tid]}})
+    else:
+        emit("error", {"message": "invalid table id"})
+
+# Update the clear_table handler to reset both states
+@socketio.on("clear_table")
+def handle_clear(data):
+    """
+    data: { id: <number>, tableIdentifier: <string> }
+    Server clears all flags and resets start. Adds to recent_cleared list.
+    """
+    tid = str(data.get("id"))
+    if tid in tables:
+        tables[tid]["billed"] = False
+        tables[tid]["cleared"] = False
         tables[tid]["start"] = None
-        recent_cleared.insert(0, f"Table {tid} ({tables[tid]['capacity']} pac)")
+        recent_cleared.insert(0, data.get("tableIdentifier", f"Table {tid} ({tables[tid]['capacity']} pac)"))
         # keep recent_cleared bounded to e.g. 10 entries
         if len(recent_cleared) > 10:
             recent_cleared.pop()
@@ -93,10 +112,12 @@ def handle_clear(data):
     else:
         emit("error", {"message": "invalid table id"})
 
+# Update reset_all to clear both states
 @socketio.on("reset_all")
 def handle_reset():
     for tid in tables:
         tables[tid]["billed"] = False
+        tables[tid]["cleared"] = False
         tables[tid]["start"] = None
     recent_cleared.clear()
     socketio.emit("full_reset", {"tables": tables, "recentCleared": recent_cleared})
