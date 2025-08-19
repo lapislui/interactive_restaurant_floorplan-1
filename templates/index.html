@@ -171,7 +171,7 @@
         <h3>Billed Tables</h3>
         <div id="billedList"></div>
 
-        <h4>Billed Tables</h4>
+        <h4>Recently Cleared</h4>
         <div id="clearedList"></div>
 
         <div style="display:flex;gap:8px;margin-top:10px;">
@@ -301,7 +301,8 @@
       });
       
       tablesContainer.appendChild(el);
-      if (t.billed) {
+      // Attach timer for both billed and cleared states
+      if (t.billed || t.cleared) {
         attachTimerFor(t.id);
       }
     });
@@ -324,6 +325,48 @@
     }
     renderTables();
   });
+
+  // Update the bill_table handler to reset the timer
+  // Remove the duplicate socket.on('tables_update') handler and combine the logic
+  
+  // Update the socket event handler to properly handle timers for all states
+  // First, let's fix the duplicate socket.on handler by removing one of them
+  // Keep only this handler and update it to handle all states properly
+  socket.on('tables_update', (payload) => {
+    const changed = payload.tables || {};
+    Object.keys(changed).forEach(k => {
+      const oldTable = serverTables[k] || {};
+      const newTable = changed[k];
+      
+      // Check if table is transitioning from cleared to booked
+      if (oldTable.cleared && newTable.billed) {
+        // Remove from recently cleared list if present
+        removeFromClearedList(newTable.id);
+      }
+      
+      // Update local state
+      serverTables[k] = newTable;
+      
+      // Handle timer based on state
+      if (newTable.billed || newTable.cleared) {
+        attachTimerFor(newTable.id);
+      } else {
+        removeTimerFor(newTable.id);
+      }
+    });
+    
+    if (payload.recentCleared) {
+      renderClearedList(payload.recentCleared);
+    }
+    
+    renderTables();
+  });
+
+  // Helper function to remove a table from the recently cleared list
+  function removeFromClearedList(tableId) {
+    // Find and remove from server's recent_cleared list
+    socket.emit('remove_from_cleared', { id: tableId });
+  }
 
   // Update status list to use consistent table number formatting
   function renderStatusList() {
@@ -352,15 +395,31 @@
 
   function renderClearedList(arr) {
     clearedList.innerHTML = '';
+    
+    // Create a Set to track unique entries
+    const uniqueEntries = new Set();
+    
     arr.forEach(s => {
+      // Skip if we've already added this entry
+      if (uniqueEntries.has(s)) return;
+      uniqueEntries.add(s);
+      
       const div = document.createElement('div');
       div.textContent = s;
       div.addEventListener('click', () => {
-        // remove clicked one locally (no need to tell server)
-        const idx = arr.indexOf(s);
-        if (idx !== -1) {
-          arr.splice(idx, 1);
-          renderClearedList(arr);
+        // Extract table ID from the text (e.g., "Table 01 (4 pac)" → "1")
+        const tableIdMatch = s.match(/Table\s+(\d+)/i);
+        if (tableIdMatch && tableIdMatch[1]) {
+          const tableId = parseInt(tableIdMatch[1], 10);
+          // Remove from server's list
+          socket.emit('remove_from_cleared', { id: tableId });
+        } else {
+          // If we can't extract ID, just remove locally
+          const idx = arr.indexOf(s);
+          if (idx !== -1) {
+            arr.splice(idx, 1);
+            renderClearedList(arr);
+          }
         }
       });
       clearedList.appendChild(div);

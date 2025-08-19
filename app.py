@@ -67,13 +67,21 @@ def handle_start(data):
     """
     data: { id: <number> }
     Server will set billed=true and record start timestamp
-    Broadcast updated tables state to all clients
+    Also removes table from recently cleared list if present
     """
     tid = str(data.get("id"))
     if tid in tables:
         tables[tid]["billed"] = True
+        tables[tid]["cleared"] = False
         tables[tid]["start"] = int(time.time() * 1000)
-        socketio.emit("tables_update", {"tables": {tid: tables[tid]}})
+        
+        # Remove from recently cleared list if present
+        for entry in recent_cleared[:]:
+            if f"Table {tid}" in entry or f"Table 0{tid}" in entry:
+                recent_cleared.remove(entry)
+                break
+                
+        socketio.emit("tables_update", {"tables": {tid: tables[tid]}, "recentCleared": recent_cleared})
     else:
         emit("error", {"message": "invalid table id"})
 
@@ -82,12 +90,14 @@ def handle_bill(data):
     """
     data: { id: <number>, tableIdentifier: <string> }
     Server changes state from billed to cleared (red to green)
+    Also resets the timer to start counting from zero
     """
     tid = str(data.get("id"))
     if tid in tables:
         tables[tid]["billed"] = False
         tables[tid]["cleared"] = True
-        # Keep the timer running
+        # Reset the timer to start counting from zero
+        tables[tid]["start"] = int(time.time() * 1000)
         socketio.emit("tables_update", {"tables": {tid: tables[tid]}})
     else:
         emit("error", {"message": "invalid table id"})
