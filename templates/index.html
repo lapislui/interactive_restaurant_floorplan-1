@@ -166,7 +166,10 @@
 
       <div class="floating-panel">
         <h3>Booked Tables</h3>
-        <div id="statusList"></div>
+        <div id="bookedList"></div>
+
+        <h3>Billed Tables</h3>
+        <div id="billedList"></div>
 
         <h4>Billed Tables</h4>
         <div id="clearedList"></div>
@@ -242,27 +245,28 @@
       const t = serverTables[k];
       const el = document.createElement('div');
       
-      // Fix the table matching with exact table number matching
-      const tableIdentifier = `Table ${t.id} (${t.capacity} pac)`;
-      const isInRecentlyCleared = clearedList.textContent.split('\n')
-        .some(text => {
-          // Add special handling for tables 1 and 2
-          if (t.id <= 2) {
-            return text.trim() === `Table 0${t.id} (${t.capacity} pac)`;
-          }
-          return text.trim() === tableIdentifier;
-        });
+      // Format table number with leading zero for single digits
+      const formattedTableNum = t.id < 10 ? `0${t.id}` : `${t.id}`;
+      const tableIdentifier = `Table ${formattedTableNum} (${t.capacity} pac)`;
       
-      el.className = `table${t.billed ? ' billed' : ''}${isInRecentlyCleared ? ' cleared' : ''}`;
+      // Set table class based on state
+      let tableClass = 'table';
+      if (t.billed) {
+        tableClass += ' billed'; // Red state (booked)
+      } else if (t.cleared) {
+        tableClass += ' cleared'; // Green state (billed)
+      }
+      
+      el.className = tableClass;
       el.dataset.id = t.id;
+      el.dataset.tableIdentifier = tableIdentifier;
       el.dataset.capacity = t.capacity;
       el.innerHTML = `
         <div class="capacity">${t.capacity} pac</div>
-        <div class="number">${t.id <= 2 ? '0' + t.id : t.id}</div>
+        <div class="number">${formattedTableNum}</div>
         <div class="timer" data-timer-for="${t.id}">${formatElapsed(t.start)}</div>
       `;
-      
-      // Update click handler
+
       el.addEventListener('click', () => {
         if (localStorage.getItem('loggedIn') !== 'true') {
           alert('Please login to change table state.');
@@ -270,43 +274,79 @@
         }
 
         const currentTableId = t.id.toString();
-        const tableText = t.id <= 2 ? `Table 0${currentTableId}` : `Table ${currentTableId}`;
+        const tableText = `Table ${formattedTableNum} (${t.capacity} pac)`;
         
-        if (isInRecentlyCleared) {
-          if (confirm(`Make ${tableText} available again?`)) {
-            socket.emit('remove_from_cleared', { id: currentTableId });
-          }
-          return;
-        }
-
-        if (!t.billed) {
-          if (confirm(`Book ${tableText} (${t.capacity} pac)?`)) {
+        if (!t.billed && !t.cleared) {
+          // Grey → Red (Initial → Booked)
+          if (confirm(`Book ${tableText}?`)) {
             socket.emit('start_table', { id: currentTableId });
           }
-        } else {
+        } else if (t.billed) {
+          // Red → Green (Booked → Billed)
           if (confirm(`${tableText} billed?`)) {
-            el.classList.remove('billed');
-            el.classList.add('cleared');
-            setTimeout(() => {
-              socket.emit('clear_table', { id: currentTableId });
-            }, 300);
+            socket.emit('bill_table', { 
+              id: currentTableId,
+              tableIdentifier: tableText
+            });
+          }
+        } else if (t.cleared) {
+          // Green → Grey (Billed → Available)
+          if (confirm(`Clear ${tableText} and make available?`)) {
+            socket.emit('clear_table', { 
+              id: currentTableId,
+              tableIdentifier: tableText
+            });
           }
         }
       });
       
       tablesContainer.appendChild(el);
-      attachTimerFor(t.id);
+      if (t.billed) {
+        attachTimerFor(t.id);
+      }
     });
     renderStatusList();
   }
 
+  // Update the socket event handler
+  socket.on('tables_update', (payload) => {
+    const changed = payload.tables || {};
+    Object.keys(changed).forEach(k => {
+      serverTables[k] = changed[k];
+      if (!serverTables[k].billed) {
+        removeTimerFor(serverTables[k].id);
+      } else {
+        attachTimerFor(serverTables[k].id);
+      }
+    });
+    if (payload.recentCleared) {
+      renderClearedList(payload.recentCleared);
+    }
+    renderTables();
+  });
+
+  // Update status list to use consistent table number formatting
   function renderStatusList() {
-    // billed list
-    statusList.innerHTML = '';
-    Object.values(serverTables).filter(t => t.billed).forEach(t => {
-      const div = document.createElement('div');
-      div.textContent = `Table ${t.id} (${t.capacity} pac) - billed`;
-      statusList.appendChild(div);
+    // Clear all lists
+    bookedList.innerHTML = '';
+    billedList.innerHTML = '';
+    
+    // Filter tables by state and add to appropriate lists
+    Object.values(serverTables).forEach(t => {
+      const formattedTableNum = t.id < 10 ? `0${t.id}` : `${t.id}`;
+      const tableText = `Table ${formattedTableNum} (${t.capacity} pac)`;
+      
+      if (t.billed) {
+        // Booked tables (red)
+        const div = document.createElement('div');
+        div.textContent = `${tableText} - booked`;
+        bookedList.appendChild(div);
+      } else if (t.cleared) {
+        // Billed tables (green)
+        const div = document.createElement('div');
+        div.textContent = `${tableText} - billed`;
+        billedList.appendChild(div);
+      }
     });
   }
 
